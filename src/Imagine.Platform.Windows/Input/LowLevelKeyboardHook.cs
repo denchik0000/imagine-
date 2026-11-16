@@ -13,7 +13,7 @@ public sealed class LowLevelKeyboardHook : IDisposable
     private const int VK_LWIN = 0x5B, VK_RWIN = 0x5C, VK_SHIFT = 0x10, VK_CONTROL = 0x11, VK_MENU = 0x12;
     private const int VK_NONAME = 0xFC;
     private readonly NativeMethods.HookProc _proc;
-    private readonly Dictionary<HotkeyGesture, Action> _intercepts = [];
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<HotkeyGesture, Action> _intercepts = new();
     private IntPtr _hook;
     private bool _swallowWinUp;
 
@@ -41,7 +41,7 @@ public sealed class LowLevelKeyboardHook : IDisposable
 
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
-        if (nCode >= 0 && _intercepts.Count > 0)
+        if (nCode >= 0 && !_intercepts.IsEmpty)
         {
             int msg = (int)wParam;
             var data = Marshal.PtrToStructure<NativeMethods.KBDLLHOOKSTRUCT>(lParam);

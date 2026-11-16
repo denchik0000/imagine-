@@ -27,6 +27,7 @@ public sealed class QuickSettingsShade : ShadeWindow
     private readonly TextBlock _battery = Ui.Ui.Text("", 13, 500);
     private readonly Dictionary<QuickTileId, bool> _state = [];
     private bool _suppressSliders;
+    private long _lastUserSlide;
 
     public QuickSettingsShade(AppServices services) : base(services, ShadeKind.QuickSettings)
     {
@@ -45,7 +46,12 @@ public sealed class QuickSettingsShade : ShadeWindow
         SetBody(new Border { Padding = new Thickness(18, 20, 12, 0), Child = scroll });
 
         services.Media.Changed += (_, _) => DispatcherQueue.TryEnqueue(() => { if (IsOpen) _ = RenderMediaAsync(); });
-        services.Audio.Changed += (_, _) => DispatcherQueue.TryEnqueue(() => { if (IsOpen && !_suppressSliders) RenderSliders(); });
+        // Громкость меняется и от нашего же ползунка: пока пользователь его тянет, панель не пересобираем,
+        // иначе ползунок пересоздаётся под пальцем на каждом шаге.
+        services.Audio.Changed += (_, _) => DispatcherQueue.TryEnqueue(() =>
+        {
+            if (IsOpen && !_suppressSliders && Environment.TickCount64 - _lastUserSlide > 1500) RenderSliders();
+        });
     }
 
     protected override async Task RefreshAsync()
@@ -335,6 +341,7 @@ public sealed class QuickSettingsShade : ShadeWindow
 
         void SetFromX(double x)
         {
+            _lastUserSlide = Environment.TickCount64;
             current = Math.Clamp(x / Math.Max(1, track.ActualWidth) * 100, 0, 100);
             Layout();
             onChanged(current);

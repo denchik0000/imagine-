@@ -17,7 +17,11 @@ public sealed class MediaService : IMediaService
     public async Task InitializeAsync()
     {
         _manager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
-        _manager.CurrentSessionChanged += async (_, _) => await AttachAsync().ConfigureAwait(false);
+        _manager.CurrentSessionChanged += async (_, _) =>
+        {
+            try { await AttachAsync().ConfigureAwait(false); }
+            catch (Exception) { /* событие из потока WinRT: исключение здесь уронило бы приложение */ }
+        };
         await AttachAsync().ConfigureAwait(false);
     }
 
@@ -27,14 +31,14 @@ public sealed class MediaService : IMediaService
         {
             _session.MediaPropertiesChanged -= OnChanged;
             _session.PlaybackInfoChanged -= OnChanged;
-            _session.TimelinePropertiesChanged -= OnChanged;
+            _session.TimelinePropertiesChanged -= OnTimeline;
         }
         _session = _manager?.GetCurrentSession();
         if (_session is not null)
         {
             _session.MediaPropertiesChanged += OnChanged;
             _session.PlaybackInfoChanged += OnChanged;
-            _session.TimelinePropertiesChanged += OnChanged;
+            _session.TimelinePropertiesChanged += OnTimeline;
         }
         await RefreshAsync().ConfigureAwait(false);
     }
@@ -42,10 +46,50 @@ public sealed class MediaService : IMediaService
     private async void OnChanged(GlobalSystemMediaTransportControlsSession sender, object args)
     {
         try { await RefreshAsync().ConfigureAwait(false); }
-        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or InvalidOperationException) { }
+        catch (Exception) { /* то же: обработчик события WinRT не должен ронять процесс */ }
     }
 
+    /// <summary>
+    /// Позиция трека меняется каждую секунду: только обновляем время, без перечитывания обложки
+    /// и без события (иначе шторка, островок и палитра пересчитывались бы ежесекундно).
+    /// </summary>
+    private void OnTimeline(GlobalSystemMediaTransportControlsSession sender, object args)
+    {
+        try
+        {
+            if (Current is not { } c || !ReferenceEquals(sender, _session)) return;
+            var t = sender.GetTimelineProperties();
+            Current = c with { Position = t.Position, Duration = t.EndTime - t.StartTime };
+        }
+        catch (System.Runtime.InteropServices.COMException)
+        {
+        }
+    }
+
+    private readonly SemaphoreSlim _refreshGate = new(1, 1);
+    private volatile bool _pending;
+
     private async Task RefreshAsync()
+    {
+        // Сессии сыплют событиями пачками; обрабатываем по одному, лишние схлопываются.
+        _pending = true;
+        if (!await _refreshGate.WaitAsync(0).ConfigureAwait(false)) return;
+        try
+        {
+            while (_pending)
+            {
+                _pending = false;
+                await Task.Delay(120).ConfigureAwait(false);
+                await RefreshCoreAsync().ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            _refreshGate.Release();
+        }
+    }
+
+    private async Task RefreshCoreAsync()
     {
         var s = _session;
         if (s is null)
@@ -68,7 +112,8 @@ public sealed class MediaService : IMediaService
         }
         // Если обложка не поменялась, отдаём прежний массив, чтобы не пересчитывать палитру.
         if (thumb is not null && Current?.Thumbnail is { } old && old.AsSpan().SequenceEqual(thumb)) thumb = old;
-        Current = new MediaState(
+        var previous = Current;
+        var next = new MediaState(
             s.SourceAppUserModelId,
             props.Title ?? "",
             props.Artist ?? "",
@@ -79,7 +124,12 @@ public sealed class MediaService : IMediaService
             timeline.EndTime - timeline.StartTime,
             playback.Controls.IsPreviousEnabled,
             playback.Controls.IsNextEnabled);
-        Changed?.Invoke(this, Current);
+        Current = next;
+        // Событие — только если поменялось что-то видимое, а не позиция.
+        if (previous is null || previous.Title != next.Title || previous.Artist != next.Artist || previous.IsPlaying != next.IsPlaying
+            || !ReferenceEquals(previous.Thumbnail, next.Thumbnail) || previous.CanNext != next.CanNext || previous.CanPrevious != next.CanPrevious
+            || previous.SourceAppId != next.SourceAppId)
+            Changed?.Invoke(this, next);
     }
 
     public async Task PlayPauseAsync() { if (_session is { } s) await s.TryTogglePlayPauseAsync(); }

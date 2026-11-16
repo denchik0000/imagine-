@@ -70,7 +70,7 @@ internal sealed class WallpaperPage(AppServices services, MainWindow window)
             BorderThickness = new Thickness(1),
         };
         if (path is not null && File.Exists(path))
-            preview.Child = new Image { Source = new BitmapImage(new Uri(path)), Stretch = Stretch.UniformToFill };
+            preview.Child = new Image { Source = Ui.Ui.Thumbnail(path, 800), Stretch = Stretch.UniformToFill };
         else
             preview.Child = Ui.Ui.Icon(Glyphs.Picture, 48).With(i => { i.HorizontalAlignment = HorizontalAlignment.Center; i.VerticalAlignment = VerticalAlignment.Center; i.Opacity = 0.4; });
 

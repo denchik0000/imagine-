@@ -21,15 +21,21 @@ public static class Ui
 
     public static Windows.UI.Text.FontWeight Weight(int weight) => new() { Weight = (ushort)Math.Clamp(weight, 100, 900) };
 
-    public static TextBlock Text(string text, double size = 14, int weight = 400, Brush? foreground = null, double opacity = 1) => new()
+    // Важно: Foreground задаём только если цвет передан. Явный null делает текст невидимым
+    // (кисть «ничего»), а не «как в теме» — из-за этого в первой сборке пропали все подписи.
+    public static TextBlock Text(string text, double size = 14, int weight = 400, Brush? foreground = null, double opacity = 1)
     {
-        Text = text,
-        FontSize = size,
-        FontWeight = Weight(weight),
-        Opacity = opacity,
-        TextWrapping = TextWrapping.WrapWholeWords,
-        Foreground = foreground,
-    };
+        var t = new TextBlock
+        {
+            Text = text,
+            FontSize = size,
+            FontWeight = Weight(weight),
+            Opacity = opacity,
+            TextWrapping = TextWrapping.WrapWholeWords,
+        };
+        if (foreground is not null) t.Foreground = foreground;
+        return t;
+    }
 
     public static TextBlock Title(string text) => Text(text, 28, 600).With(t => t.FontFamily = DisplayFont);
 
@@ -37,13 +43,12 @@ public static class Ui
 
     public static TextBlock Caption(string text) => Text(text, 12, 400, opacity: 0.72);
 
-    public static FontIcon Icon(string glyph, double size = 16, Brush? foreground = null) => new()
+    public static FontIcon Icon(string glyph, double size = 16, Brush? foreground = null)
     {
-        Glyph = glyph,
-        FontFamily = IconFont,
-        FontSize = size,
-        Foreground = foreground,
-    };
+        var i = new FontIcon { Glyph = glyph, FontFamily = IconFont, FontSize = size };
+        if (foreground is not null) i.Foreground = foreground;
+        return i;
+    }
 
     public static StackPanel VStack(double spacing, params UIElement[] children)
     {
@@ -159,6 +164,23 @@ public static class Ui
         HorizontalScrollMode = ScrollMode.Disabled,
         VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
     };
+
+    private static readonly Dictionary<(string, int, DateTime), Microsoft.UI.Xaml.Media.Imaging.BitmapImage> Thumbs = new();
+
+    /// <summary>
+    /// Картинка, декодированная сразу в нужном размере и закэшированная. Обои бывают 4K–8K:
+    /// без DecodePixelWidth каждый показ страницы декодировал их целиком — это сотни мегабайт и секунды.
+    /// </summary>
+    public static Microsoft.UI.Xaml.Media.Imaging.BitmapImage Thumbnail(string path, int decodeWidth)
+    {
+        var key = (path, decodeWidth, File.Exists(path) ? File.GetLastWriteTimeUtc(path) : default);
+        if (Thumbs.TryGetValue(key, out var cached)) return cached;
+        if (Thumbs.Count > 64) Thumbs.Clear();
+        var bmp = new Microsoft.UI.Xaml.Media.Imaging.BitmapImage { DecodePixelWidth = decodeWidth, DecodePixelType = Microsoft.UI.Xaml.Media.Imaging.DecodePixelType.Logical };
+        bmp.UriSource = new Uri(path);
+        Thumbs[key] = bmp;
+        return bmp;
+    }
 
     public static Brush ThemeBrush(string key) => (Brush)Application.Current.Resources[key];
 

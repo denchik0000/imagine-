@@ -37,8 +37,15 @@ public sealed class ClockWidgetWindow : OverlayWindow
         _canvas.Children.Add(_clock);
         Content = _canvas;
         _timer = new DispatcherTimerLite(DispatcherQueue, TimeSpan.FromSeconds(1), () => _clock.Tick(DateTime.Now));
+        // Клик по часам или Alt+Tab мог поднять окно — возвращаем его вниз.
+        Activated += (_, _) => WindowStyler.SendToBottom(Hwnd);
         Palette.Changed += (_, _) => DispatcherQueue.TryEnqueue(Restyle);
-        services.Settings.Changed += (_, _) => DispatcherQueue.TryEnqueue(Restyle);
+        services.Settings.Changed += (_, settings) =>
+        {
+            // Перестраиваем часы, только если поменялись именно их настройки.
+            if (Equals(settings.Clock, _lastClock)) return;
+            DispatcherQueue.TryEnqueue(Restyle);
+        };
     }
 
     public void ShowClock()
@@ -50,12 +57,11 @@ public sealed class ClockWidgetWindow : OverlayWindow
         }
         Restyle();
         AppWindow.Show(false);
-        if (!_attached)
-        {
-            _attached = DesktopHost.TryAttach(Hwnd);
-            if (!_attached) WindowStyler.SendToBottom(Hwnd);
-            Layout();
-        }
+        // Не встраиваемся в окно Проводника (WorkerW): родитель из чужого процесса связывает
+        // очереди ввода, и любая заминка одного процесса подвешивает рабочий стол другого.
+        // Вместо этого держим часы обычным окном в самом низу стопки.
+        WindowStyler.SendToBottom(Hwnd);
+        Layout();
         _timer.Start();
     }
 
@@ -65,9 +71,12 @@ public sealed class ClockWidgetWindow : OverlayWindow
         Hide();
     }
 
+    private Core.Settings.ClockSettings? _lastClock;
+
     private void Restyle()
     {
         var s = _services.Current.Clock;
+        _lastClock = s;
         if (!s.DesktopClock)
         {
             if (IsVisible) HideClock();

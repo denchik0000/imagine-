@@ -13,8 +13,12 @@ namespace Imagine.App.Shell;
 public sealed class ShellController : IDisposable
 {
     private readonly AppServices _services;
-    private readonly LowLevelMouseHook _mouse = new();
     private readonly LowLevelKeyboardHook _keyboard = new();
+    private readonly object _gate = new();
+    private HookThread? _hooks;
+    private bool _hooksMouse;
+    private bool _hooksKeyboard;
+    private bool _keyboardNeeded;
     private readonly MessageWindow _messages = new();
     private readonly EdgeZoneDetector _detector;
     private readonly DispatcherTimerLite _tick;
@@ -24,18 +28,26 @@ public sealed class ShellController : IDisposable
     private ClockWidgetWindow? _clock;
     private IslandWindow? _island;
     private TrayIcon? _tray;
-    private bool _picking;
+    private volatile bool _picking;
 
     public ShellController(AppServices services)
     {
         _services = services;
         _detector = new EdgeZoneDetector(services.Current.Shades.Edge, Monitors.All().Select(a => a.Bounds));
-        _detector.Triggered += (_, r) => Open(r.Kind, r.Trigger, r.AnchorX);
-        _mouse.Event += OnMouse;
-        _tick = new DispatcherTimerLite(services.Dispatcher, TimeSpan.FromMilliseconds(33), OnTick);
-        _fullscreenPoll = new DispatcherTimerLite(services.Dispatcher, TimeSpan.FromSeconds(1), () => _detector.IsFullscreenAppActive = FullscreenDetector.IsFullscreenActive());
+        // Детектор вызывается из потока хуков, поэтому открываем шторку через очередь интерфейса.
+        _detector.Triggered += (_, r) => services.Dispatcher.TryEnqueue(() => Open(r.Kind, r.Trigger, r.AnchorX));
+        _tick = new DispatcherTimerLite(services.Dispatcher, TimeSpan.FromMilliseconds(50), OnTick);
+        _fullscreenPoll = new DispatcherTimerLite(services.Dispatcher, TimeSpan.FromSeconds(1), () =>
+        {
+            bool fs = FullscreenDetector.IsFullscreenActive();
+            lock (_gate) _detector.IsFullscreenAppActive = fs;
+        });
 
-        _messages.DisplayChanged += (_, _) => _detector.SetMonitors(Monitors.All().Select(a => a.Bounds));
+        _messages.DisplayChanged += (_, _) =>
+        {
+            var bounds = Monitors.All().Select(a => a.Bounds).ToList();
+            lock (_gate) _detector.SetMonitors(bounds);
+        };
         _messages.SessionUnlocked += (_, _) => services.Dispatcher.TryEnqueue(() => _clock?.FlyIn());
         _messages.SessionLocked += (_, _) => services.Dispatcher.TryEnqueue(CloseAll);
         _messages.SettingChanged += (_, area) =>
@@ -61,11 +73,15 @@ public sealed class ShellController : IDisposable
 
     private T CreateShade<T>(T shade) where T : ShadeWindow
     {
-        shade.Opened += (_, _) => _detector.IsShadeOpen = true;
+        shade.Opened += (_, _) => { lock (_gate) _detector.IsShadeOpen = true; };
         shade.ClosedShade += (_, _) =>
         {
-            _detector.IsShadeOpen = (_notifications?.IsOpen ?? false) || (_quick?.IsOpen ?? false);
-            _detector.NotifyClosed(Environment.TickCount64);
+            bool open = (_notifications?.IsOpen ?? false) || (_quick?.IsOpen ?? false);
+            lock (_gate)
+            {
+                _detector.IsShadeOpen = open;
+                _detector.NotifyClosed(Environment.TickCount64);
+            }
         };
         return shade;
     }
@@ -75,7 +91,11 @@ public sealed class ShellController : IDisposable
         Reconfigure();
         if (_services.Current.General.ShowTrayIcon) CreateTray();
         _clock = new ClockWidgetWindow(_services);
-        _services.Dispatcher.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () => _clock.ShowClock());
+        _services.Dispatcher.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
+        {
+            try { _clock.ShowClock(); }
+            catch (Exception ex) { Log.Error("Часы на рабочем столе", ex); }
+        });
     }
 
     private void CreateTray()
@@ -120,35 +140,44 @@ public sealed class ShellController : IDisposable
         ];
     }
 
+    private ImagineSettingsSnapshot? _applied;
+
+    /// <summary>Снимок того, что влияет на ввод и окна: перенастраиваемся, только если он поменялся.</summary>
+    private sealed record ImagineSettingsSnapshot(Core.Settings.ShadeSettings Shades, bool Tray, bool Clock);
+
     private void Reconfigure()
     {
         var s = _services.Current;
-        _detector.Settings = s.Shades.Edge;
-        _messages.UnregisterAllHotkeys();
-        _keyboard.Clear();
-        if (s.Shades.Enabled)
+        var snap = new ImagineSettingsSnapshot(s.Shades, s.General.ShowTrayIcon, s.Clock.DesktopClock);
+        if (snap == _applied && !_picking) return;
+        bool shadesChanged = _applied is null || !Equals(_applied.Shades, s.Shades);
+        _applied = snap;
+
+        if (shadesChanged)
         {
-            Bind(s.Shades.NotificationsHotkey, () => Toggle(ShadeKind.Notifications));
-            Bind(s.Shades.QuickSettingsHotkey, () => Toggle(ShadeKind.QuickSettings));
-            Bind(s.Shades.ToggleBothHotkey, ToggleBoth);
-            if (s.Shades.Edge.MouseEnabled || s.Shades.Edge.TouchpadPullEnabled)
+            lock (_gate) _detector.Settings = s.Shades.Edge;
+            _messages.UnregisterAllHotkeys();
+            _keyboard.Clear();
+            _keyboardNeeded = false;
+            if (s.Shades.Enabled)
             {
-                if (!_mouse.IsInstalled) _mouse.Install();
-                _tick.Start();
-                if (s.Shades.Edge.DisableInFullscreen) _fullscreenPoll.Start();
-                else
-                {
-                    _fullscreenPoll.Stop();
-                    _detector.IsFullscreenAppActive = false;
-                }
+                Bind(s.Shades.NotificationsHotkey, () => Toggle(ShadeKind.Notifications));
+                Bind(s.Shades.QuickSettingsHotkey, () => Toggle(ShadeKind.QuickSettings));
+                Bind(s.Shades.ToggleBothHotkey, ToggleBoth);
             }
-            else StopMouse();
+            else CloseAll();
         }
+
+        bool edge = s.Shades.Enabled && (s.Shades.Edge.MouseEnabled || s.Shades.Edge.TouchpadPullEnabled);
+        UpdateHooks(edge || _picking, _keyboardNeeded);
+        if (edge) _tick.Start(); else _tick.Stop();
+        if (edge && s.Shades.Edge.DisableInFullscreen) _fullscreenPoll.Start();
         else
         {
-            StopMouse();
-            CloseAll();
+            _fullscreenPoll.Stop();
+            lock (_gate) _detector.IsFullscreenAppActive = false;
         }
+
         if (s.General.ShowTrayIcon && _tray is null) CreateTray();
         else if (!s.General.ShowTrayIcon && _tray is not null) { _tray.Dispose(); _tray = null; }
         if (_clock is not null)
@@ -158,12 +187,18 @@ public sealed class ShellController : IDisposable
         }
     }
 
-    private void StopMouse()
+    /// <summary>Хуки живут в отдельном потоке; пересоздаём его, только когда набор хуков меняется.</summary>
+    private void UpdateHooks(bool mouse, bool keyboard)
     {
-        if (_picking) return;
-        _tick.Stop();
-        _fullscreenPoll.Stop();
-        if (_mouse.IsInstalled) _mouse.Uninstall();
+        if (_hooks is not null && _hooksMouse == mouse && _hooksKeyboard == keyboard) return;
+        _hooks?.Dispose();
+        _hooks = null;
+        _hooksMouse = mouse;
+        _hooksKeyboard = keyboard;
+        if (!mouse && !keyboard) return;
+        _hooks = new HookThread(mouse, keyboard ? _keyboard : null);
+        if (_hooks.Mouse is { } m) m.Event += OnMouse;
+        if (_hooks.Error is { } err) Log.Error("Хуки ввода", err);
     }
 
     /// <summary>
@@ -175,24 +210,34 @@ public sealed class ShellController : IDisposable
         if (!HotkeyGesture.TryParse(text, out var g) || g.IsEmpty) return;
         if (_messages.RegisterHotkey(g, () => _services.Dispatcher.TryEnqueue(() => action()))) return;
         _keyboard.Intercept(g, () => _services.Dispatcher.TryEnqueue(() => action()));
-        _keyboard.Install();
+        _keyboardNeeded = true;
     }
 
+    /// <summary>Вызывается в потоке хуков: только быстрые вычисления, никаких окон.</summary>
     private void OnMouse(MouseHookEvent e)
     {
         if (_picking)
         {
-            if (e.LeftButtonDown && !e.IsWheel) FinishColorPick(e.X, e.Y);
+            if (e.IsClick)
+            {
+                _picking = false;
+                int x = e.X, y = e.Y;
+                _services.Dispatcher.TryEnqueue(() => FinishColorPick(x, y));
+            }
             return;
         }
-        if (e.IsWheel) _detector.OnWheel(e.X, e.Y, e.WheelDelta, e.Timestamp, e.LeftButtonDown);
-        else _detector.OnMouseMove(e.X, e.Y, e.Timestamp, e.LeftButtonDown);
+        if (e.IsClick) return;
+        lock (_gate)
+        {
+            if (e.IsWheel) _detector.OnWheel(e.X, e.Y, e.WheelDelta, e.Timestamp, e.LeftButtonDown);
+            else _detector.OnMouseMove(e.X, e.Y, e.Timestamp, e.LeftButtonDown);
+        }
     }
 
     private void OnTick()
     {
         var (x, y) = Monitors.CursorPosition();
-        _detector.OnTick(Environment.TickCount64, x, y);
+        lock (_gate) _detector.OnTick(Environment.TickCount64, x, y);
     }
 
     public void Open(ShadeKind kind, ShadeTrigger trigger, double? anchorX = null)
@@ -234,27 +279,24 @@ public sealed class ShellController : IDisposable
     public void BeginColorPick()
     {
         _picking = true;
-        if (!_mouse.IsInstalled) _mouse.Install();
+        UpdateHooks(true, _hooksKeyboard);
         Island.ShowMessage(Glyphs.ColorPicker, "Кликните по любому цвету на экране", 6);
     }
 
     private void FinishColorPick(int x, int y)
     {
-        _picking = false;
         uint argb = Native.ScreenPixel(x, y);
-        _services.Dispatcher.TryEnqueue(() =>
-        {
-            _services.ThemeSettingsChanged(s => s with { Theme = s.Theme with { SeedSource = SeedSource.Custom, CustomSeed = argb } });
-            Island.ShowMessage(Glyphs.ColorPicker, "Новый цвет палитры: " + Imagine.Color.ColorUtils.ToHex(argb));
-            Reconfigure();
-        });
+        _services.ThemeSettingsChanged(s => s with { Theme = s.Theme with { SeedSource = SeedSource.Custom, CustomSeed = argb } });
+        Island.ShowMessage(Glyphs.ColorPicker, "Новый цвет палитры: " + Imagine.Color.ColorUtils.ToHex(argb));
+        _applied = null;
+        Reconfigure();
     }
 
     public void Dispose()
     {
         _tick.Stop();
         _fullscreenPoll.Stop();
-        _mouse.Dispose();
+        _hooks?.Dispose();
         _keyboard.Dispose();
         _tray?.Dispose();
         _messages.Dispose();

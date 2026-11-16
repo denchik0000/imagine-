@@ -24,6 +24,13 @@ public sealed partial class App : Application, IXamlMetadataProvider
             Log.Error("Необработанное исключение", e.Exception);
             e.Handled = true;
         };
+        // Исключения из фоновых потоков и забытых задач тоже пишем в журнал, чтобы было что разбирать.
+        AppDomain.CurrentDomain.UnhandledException += (_, e) => Log.Error("Фатальное исключение", e.ExceptionObject as Exception);
+        TaskScheduler.UnobservedTaskException += (_, e) =>
+        {
+            Log.Error("Незамеченное исключение задачи", e.Exception);
+            e.SetObserved();
+        };
     }
 
     public static new App Current => (App)Application.Current;

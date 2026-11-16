@@ -42,9 +42,20 @@ public sealed class ContourGlow : Grid
         Children.Add(_halo);
         Children.Add(_glow);
         Refresh();
-        Palette.Changed += OnPalette;
-        Loaded += (_, _) => SetAnimating(_mode == GlowMode.Aurora);
-        Unloaded += (_, _) => SetAnimating(false);
+        // Подписка только пока элемент на экране: статическое событие иначе держало бы в памяти
+        // каждую когда-либо открытую страницу.
+        Loaded += (_, _) =>
+        {
+            Palette.Changed -= OnPalette;
+            Palette.Changed += OnPalette;
+            Refresh();
+            SetAnimating(_mode == GlowMode.Aurora);
+        };
+        Unloaded += (_, _) =>
+        {
+            Palette.Changed -= OnPalette;
+            SetAnimating(false);
+        };
     }
 
     public double Intensity { get; set; } = 0.7;

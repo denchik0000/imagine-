@@ -290,7 +290,7 @@ public sealed class NotificationShade : ShadeWindow
         if (item.Body.Length > 0)
             texts.Children.Add(Ui.Ui.Text(item.Body, compact ? 12 : 13, 400, Palette.Get(ColorRole.OnSurfaceVariant)).With(t => { t.MaxLines = compact ? 1 : 4; t.TextTrimming = TextTrimming.CharacterEllipsis; }));
         if (!compact && item.ImagePath is { } img && File.Exists(img))
-            texts.Children.Add(new Border { CornerRadius = new CornerRadius(12), Margin = new Thickness(0, 6, 0, 0), MaxHeight = 160, Child = new Image { Source = new BitmapImage(new Uri(img)), Stretch = Stretch.UniformToFill } });
+            texts.Children.Add(new Border { CornerRadius = new CornerRadius(12), Margin = new Thickness(0, 6, 0, 0), MaxHeight = 160, Child = new Image { Source = Ui.Ui.Thumbnail(img, 400), Stretch = Stretch.UniformToFill } });
 
         UIElement trailing = new Border();
         if (dismissible)
@@ -313,7 +313,7 @@ public sealed class NotificationShade : ShadeWindow
     private static FrameworkElement AppIcon(string? path, double size)
     {
         if (path is not null && File.Exists(path))
-            return new Border { Width = size, Height = size, CornerRadius = new CornerRadius(size / 4), Child = new Image { Source = new BitmapImage(new Uri(path)), Stretch = Stretch.UniformToFill } };
+            return new Border { Width = size, Height = size, CornerRadius = new CornerRadius(size / 4), Child = new Image { Source = Ui.Ui.Thumbnail(path, 64), Stretch = Stretch.UniformToFill } };
         return new Border
         {
             Width = size,

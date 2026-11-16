@@ -4,7 +4,7 @@ using Imagine.Platform.Interop;
 namespace Imagine.Platform.Input;
 
 /// <summary>Сырые события мыши из WH_MOUSE_LL.</summary>
-public readonly record struct MouseHookEvent(int X, int Y, int WheelDelta, bool IsWheel, bool LeftButtonDown, long Timestamp);
+public readonly record struct MouseHookEvent(int X, int Y, int WheelDelta, bool IsWheel, bool LeftButtonDown, long Timestamp, bool IsClick = false);
 
 /// <summary>
 /// Глобальный хук мыши. Устанавливать на потоке с циклом сообщений (UI-поток).
@@ -42,7 +42,12 @@ public sealed class LowLevelMouseHook : IDisposable
         {
             int msg = (int)wParam;
             var data = Marshal.PtrToStructure<NativeMethods.MSLLHOOKSTRUCT>(lParam);
-            if (msg == NativeMethods.WM_LBUTTONDOWN) _leftDown = true;
+            if (msg == NativeMethods.WM_LBUTTONDOWN)
+            {
+                _leftDown = true;
+                try { Event?.Invoke(new MouseHookEvent(data.pt.X, data.pt.Y, 0, false, true, NativeMethods.Now(), IsClick: true)); }
+                catch (Exception ex) when (ex is InvalidOperationException or ArgumentException) { }
+            }
             else if (msg == NativeMethods.WM_LBUTTONUP) _leftDown = false;
             if (msg is NativeMethods.WM_MOUSEMOVE or NativeMethods.WM_MOUSEWHEEL)
             {

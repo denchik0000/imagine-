@@ -121,7 +121,9 @@ public abstract class ShadeWindow : OverlayWindow
         try { await RefreshAsync(); }
         catch (Exception ex) { Log.Error("Обновление шторки", ex); }
 
-        Place(_x, work.Top + margin, width, 1);
+        // Окно сразу полного размера, выше экрана; дальше его только двигаем.
+        // Перемещение окна дешёвое (делает DWM), а изменение размера каждый кадр заставляло WinUI всё перекладывать.
+        Place(_x, work.Top + margin - _fullHeight, width, _fullHeight);
         Activate();
         WindowStyler.BringToFront(Hwnd, true);
         _spring.AnimateTo(1);
@@ -186,8 +188,8 @@ public abstract class ShadeWindow : OverlayWindow
         if (_area is null) return;
         double p = Math.Max(0, progress);
         int margin = (int)Math.Round(Margin * Scale);
-        int h = (int)Math.Round(_fullHeight * Math.Min(1.04, p));
-        Place(_x, _area.WorkArea.Top + margin, AppWindow.Size.Width, Math.Max(1, h));
+        int offset = (int)Math.Round(_fullHeight * (1 - Math.Min(1.0, p)));
+        AppWindow.Move(new Windows.Graphics.PointInt32(_x, _area.WorkArea.Top + margin - offset));
         _panel.Opacity = Math.Clamp(p * 1.6, 0, 1);
     }
 

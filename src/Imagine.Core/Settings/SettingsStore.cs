@@ -26,6 +26,30 @@ public sealed class SettingsStore
 
     public string Path => _path;
 
+    /// <summary>
+    /// Отложенная запись: ползунки меняют настройки десятки раз в секунду, а на диск достаточно
+    /// записать последнее значение. Ноль — писать сразу.
+    /// </summary>
+    public TimeSpan SaveDelay { get; set; }
+
+    private Timer? _saveTimer;
+    private bool _dirty;
+
+    /// <summary>Записать отложенные изменения немедленно (при выходе).</summary>
+    public void Flush()
+    {
+        ImagineSettings snapshot;
+        lock (_lock)
+        {
+            if (!_dirty) return;
+            _dirty = false;
+            snapshot = _current;
+        }
+        try { Save(snapshot); }
+        catch (IOException) { }
+        catch (UnauthorizedAccessException) { }
+    }
+
     public ImagineSettings Current
     {
         get { lock (_lock) return _current; }
@@ -54,8 +78,15 @@ public sealed class SettingsStore
         lock (_lock)
         {
             next = change(_current);
+            if (Equals(next, _current)) return;
             _current = next;
-            Save(next);
+            if (SaveDelay <= TimeSpan.Zero) Save(next);
+            else
+            {
+                _dirty = true;
+                _saveTimer ??= new Timer(_ => Flush());
+                _saveTimer.Change(SaveDelay, Timeout.InfiniteTimeSpan);
+            }
         }
         Changed?.Invoke(this, next);
     }

@@ -21,7 +21,7 @@ public sealed class AppServices : IDisposable
         DataDirectory = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Imagine");
         Directory.CreateDirectory(DataDirectory);
 
-        Settings = new SettingsStore(SettingsStore.DefaultPath);
+        Settings = new SettingsStore(SettingsStore.DefaultPath) { SaveDelay = TimeSpan.FromMilliseconds(600) };
         Registry = new RegistryAdapter();
         Accent = new AccentService(Registry);
         Wallpapers = new DesktopWallpaperService();
@@ -253,6 +253,7 @@ public sealed class AppServices : IDisposable
 
     public void Dispose()
     {
+        Settings.Flush();
         _scheduleTimer.Stop();
         _rotationTimer.Stop();
         _lockTimer.Stop();

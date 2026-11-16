@@ -21,7 +21,7 @@ internal static class ClockPage
         var stage = new Grid { Height = 240, CornerRadius = new CornerRadius(16), Padding = new Thickness(28) };
         var path = services.Current.Wallpaper.Path ?? services.Wallpapers.GetWallpaper();
         if (path is not null && File.Exists(path))
-            stage.Children.Add(new Image { Source = new BitmapImage(new Uri(path)), Stretch = Stretch.UniformToFill, Margin = new Thickness(-28) });
+            stage.Children.Add(new Image { Source = Ui.Ui.Thumbnail(path, 1000), Stretch = Stretch.UniformToFill, Margin = new Thickness(-28) });
         else stage.Background = Palette.Get(ColorRole.PrimaryContainer);
         stage.Children.Add(preview);
 

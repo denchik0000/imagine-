@@ -66,7 +66,10 @@ public sealed class NotificationSource : INotificationSource, IDisposable
                 Changed?.Invoke(this, EventArgs.Empty);
             }
         }
-        catch (Exception ex) when (ex is System.Runtime.InteropServices.COMException or InvalidOperationException) { }
+        catch (Exception)
+        {
+            // Опрос идёт в пуле потоков: любое исключение здесь уронило бы всё приложение.
+        }
     }
 
     public async Task<IReadOnlyList<NotificationItem>> GetAllAsync()

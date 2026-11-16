@@ -48,7 +48,7 @@ internal static class GlassPage
         var path = services.Current.Wallpaper.Path ?? services.Wallpapers.GetWallpaper();
         var stage = new Grid { Height = 260, CornerRadius = new CornerRadius(16) };
         if (path is not null && File.Exists(path))
-            stage.Children.Add(new Image { Source = new BitmapImage(new Uri(path)), Stretch = Stretch.UniformToFill });
+            stage.Children.Add(new Image { Source = Ui.Ui.Thumbnail(path, 1000), Stretch = Stretch.UniformToFill });
         else stage.Background = Palette.Get(ColorRole.PrimaryContainer);
 
         // Превью стекла внутри окна: настоящий размытый фон рабочего стола даёт только сама шторка,
