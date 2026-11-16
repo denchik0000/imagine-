@@ -39,6 +39,17 @@ public sealed class MessageWindow : IDisposable
     public event EventHandler? SessionLocked;
     public event EventHandler? SessionUnlocked;
 
+    /// <summary>Любое сообщение окна (для значка в трее).</summary>
+    public event Action<uint, IntPtr, IntPtr>? RawMessage;
+
+    /// <summary>Проводник перезапустился (нужно заново добавить значок в трей).</summary>
+    public event EventHandler? TaskbarCreated;
+
+    private static readonly uint s_taskbarCreated = RegisterWindowMessage("TaskbarCreated");
+
+    [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+    private static extern uint RegisterWindowMessage(string message);
+
     /// <summary>Регистрирует сочетание. false — занято системой или другой программой.</summary>
     public bool RegisterHotkey(HotkeyGesture gesture, Action action)
     {
@@ -62,6 +73,8 @@ public sealed class MessageWindow : IDisposable
 
     private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
+        RawMessage?.Invoke(msg, wParam, lParam);
+        if (msg == s_taskbarCreated) TaskbarCreated?.Invoke(this, EventArgs.Empty);
         switch (msg)
         {
             case NativeMethods.WM_HOTKEY:

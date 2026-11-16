@@ -1,0 +1,68 @@
+namespace Imagine.App.Ui;
+
+/// <summary>Значки шрифта Segoe Fluent Icons.</summary>
+public static class Glyphs
+{
+    public const string Wifi = "";
+    public const string WifiOff = "";
+    public const string Bluetooth = "";
+    public const string Airplane = "";
+    public const string Brightness = "";
+    public const string Volume = "";
+    public const string Mute = "";
+    public const string Mic = "";
+    public const string MicOff = "";
+    public const string DarkMode = "";
+    public const string NightLight = "";
+    public const string Focus = "";
+    public const string Battery = "";
+    public const string BatterySaver = "";
+    public const string Hotspot = "";
+    public const string Coffee = "";
+    public const string Screenshot = "";
+    public const string ColorPicker = "";
+    public const string Calculator = "";
+    public const string Project = "";
+    public const string Settings = "";
+    public const string Palette = "";
+    public const string Shuffle = "";
+    public const string Picture = "";
+    public const string Clipboard = "";
+    public const string Emoji = "";
+    public const string Lock = "";
+    public const string Play = "";
+    public const string Pause = "";
+    public const string Next = "";
+    public const string Previous = "";
+    public const string Close = "";
+    public const string ClearAll = "";
+    public const string Bell = "";
+    public const string History = "";
+    public const string Clock = "";
+    public const string Glass = "";
+    public const string Shade = "";
+    public const string Calendar = "";
+    public const string Link = "";
+    public const string Info = "";
+    public const string Undo = "";
+    public const string Save = "";
+    public const string Folder = "";
+    public const string Rotate = "";
+    public const string Crop = "";
+    public const string Sun = "";
+    public const string Moon = "";
+    public const string Keyboard = "";
+    public const string Mouse = "";
+    public const string Touchpad = "";
+    public const string Add = "";
+    public const string Delete = "";
+    public const string ChevronDown = "";
+    public const string ChevronUp = "";
+    public const string Music = "";
+    public const string Code = "";
+    public const string Terminal = "";
+    public const string Light = "";
+    public const string Export = "";
+    public const string Sparkle = "";
+    public const string Pin = "";
+}
