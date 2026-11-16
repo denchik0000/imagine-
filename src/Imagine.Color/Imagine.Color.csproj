@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Imagine.Color</RootNamespace>
+    <Description>Порт Google material-color-utilities на C#: HCT, квантизация обоев, оценка цветов и динамические схемы Material You.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <IsTrimmable>true</IsTrimmable>
+    <IsAotCompatible>true</IsAotCompatible>
+  </PropertyGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Imagine.Color.Tests" />
+  </ItemGroup>
+</Project>
