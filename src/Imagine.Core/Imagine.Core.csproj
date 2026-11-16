@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Imagine.Core</RootNamespace>
+    <Description>Платформенно-независимое ядро Imagine: генерация тем из обоев, экспорт, логика шторок, жестов, уведомлений и часов.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Imagine.Color\Imagine.Color.csproj" />
+  </ItemGroup>
+  <ItemGroup>
+    <InternalsVisibleTo Include="Imagine.Core.Tests" />
+  </ItemGroup>
+</Project>
