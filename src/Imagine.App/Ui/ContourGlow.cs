@@ -74,7 +74,7 @@ public sealed class ContourGlow : Grid
         SetAnimating(mode == GlowMode.Aurora && IsLoaded);
     }
 
-    private void OnPalette(object? sender, ThemePalette e) => DispatcherQueue?.TryEnqueue(Refresh);
+    private void OnPalette(object? sender, ThemePalette e) => DispatcherQueue?.Post(Refresh);
 
     private void Refresh()
     {
@@ -112,6 +112,20 @@ public sealed class ContourGlow : Grid
     private long _last;
 
     private void OnFrame(object? sender, object e)
+    {
+        try
+        {
+            OnFrameCore();
+        }
+        catch (Exception ex)
+        {
+            // Кадр анимации не должен ронять приложение: останавливаем анимацию и пишем в журнал.
+            CompositionTarget.Rendering -= OnFrame;
+            Log.Error("Кадр анимации", ex);
+        }
+    }
+
+    private void OnFrameCore()
     {
         long now = Environment.TickCount64;
         // ~12 градусов в секунду: спокойное «дыхание», не отвлекает.

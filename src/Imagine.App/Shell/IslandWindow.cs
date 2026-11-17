@@ -43,12 +43,12 @@ public sealed class IslandWindow : OverlayWindow
         _root.Tapped += (_, _) => App.Current.Shell.Open(Core.Shades.ShadeKind.QuickSettings, Core.Shades.ShadeTrigger.Tray);
         Content = _root;
         _hideTimer = new DispatcherTimerLite(DispatcherQueue, TimeSpan.FromSeconds(3), Collapse);
-        Palette.Changed += (_, t) => DispatcherQueue.TryEnqueue(() =>
+        Palette.Changed += (_, t) => DispatcherQueue.Post(() =>
         {
             _glass.SetTint(t.Glass.Tint, Math.Min(0.85, t.Glass.TintOpacity + 0.2), t.Glass.LuminosityOpacity);
             _root.RequestedTheme = t.IsDark ? ElementTheme.Dark : ElementTheme.Light;
         });
-        services.Media.Changed += (_, m) => DispatcherQueue.TryEnqueue(() => OnMedia(m));
+        services.Media.Changed += (_, m) => DispatcherQueue.Post(() => OnMedia(m));
     }
 
     private bool Enabled => _services.Current.Shades.Island;
@@ -139,6 +139,20 @@ public sealed class IslandWindow : OverlayWindow
     }
 
     private void OnFrame(object? sender, object e)
+    {
+        try
+        {
+            OnFrameCore();
+        }
+        catch (Exception ex)
+        {
+            // Кадр анимации не должен ронять приложение: останавливаем анимацию и пишем в журнал.
+            CompositionTarget.Rendering -= OnFrame;
+            Log.Error("Кадр анимации", ex);
+        }
+    }
+
+    private void OnFrameCore()
     {
         long now = Environment.TickCount64;
         bool moving = _spring.Step(Math.Min(0.05, (now - _lastFrame) / 1000.0));

@@ -79,8 +79,9 @@ public sealed class TransparentBackdrop : SystemBackdrop
             _compositor ??= new Windows.UI.Composition.Compositor();
             connectedTarget.SystemBackdrop = _compositor.CreateColorBrush(Windows.UI.Color.FromArgb(0, 0, 0, 0));
         }
-        catch (Exception ex) when (ex is COMException or InvalidOperationException or TypeInitializationException)
+        catch (Exception ex)
         {
+            Log.Error("Прозрачный фон окна", ex);
             Failed = true;
         }
     }

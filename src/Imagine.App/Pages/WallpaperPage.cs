@@ -35,7 +35,7 @@ internal sealed class WallpaperPage(AppServices services, MainWindow window)
             WallpaperGroup(),
             _report);
         RenderDynamic();
-        EventHandler<ThemePalette> onPalette = (_, _) => window.DispatcherQueue.TryEnqueue(RenderDynamic);
+        EventHandler<ThemePalette> onPalette = (_, _) => window.DispatcherQueue.Post(RenderDynamic);
         Palette.Changed += onPalette;
         page.Unloaded += (_, _) => Palette.Changed -= onPalette;
         EventHandler<Core.Services.ApplyReport> onApplied = (_, r) => ShowReport(r);

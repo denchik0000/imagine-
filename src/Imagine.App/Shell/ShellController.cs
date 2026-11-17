@@ -35,7 +35,7 @@ public sealed class ShellController : IDisposable
         _services = services;
         _detector = new EdgeZoneDetector(services.Current.Shades.Edge, Monitors.All().Select(a => a.Bounds));
         // Детектор вызывается из потока хуков, поэтому открываем шторку через очередь интерфейса.
-        _detector.Triggered += (_, r) => services.Dispatcher.TryEnqueue(() => Open(r.Kind, r.Trigger, r.AnchorX));
+        _detector.Triggered += (_, r) => services.Dispatcher.Post(() => Open(r.Kind, r.Trigger, r.AnchorX));
         _tick = new DispatcherTimerLite(services.Dispatcher, TimeSpan.FromMilliseconds(50), OnTick);
         _fullscreenPoll = new DispatcherTimerLite(services.Dispatcher, TimeSpan.FromSeconds(1), () =>
         {
@@ -48,16 +48,16 @@ public sealed class ShellController : IDisposable
             var bounds = Monitors.All().Select(a => a.Bounds).ToList();
             lock (_gate) _detector.SetMonitors(bounds);
         };
-        _messages.SessionUnlocked += (_, _) => services.Dispatcher.TryEnqueue(() => _clock?.FlyIn());
-        _messages.SessionLocked += (_, _) => services.Dispatcher.TryEnqueue(CloseAll);
+        _messages.SessionUnlocked += (_, _) => services.Dispatcher.Post(() => _clock?.FlyIn());
+        _messages.SessionLocked += (_, _) => services.Dispatcher.Post(CloseAll);
         _messages.SettingChanged += (_, area) =>
         {
             // Пользователь сменил обои средствами Windows — перекрашиваемся сами.
             if (area is null && services.Current.Wallpaper.Path is { } p && services.Wallpapers.GetWallpaper() is { } wp
                 && !string.Equals(p, wp, StringComparison.OrdinalIgnoreCase) && File.Exists(wp))
-                services.Dispatcher.TryEnqueue(async () => await services.SetWallpaperAsync(wp));
+                services.Dispatcher.Post(async () => await services.SetWallpaperAsync(wp));
         };
-        services.Settings.Changed += (_, s) => services.Dispatcher.TryEnqueue(Reconfigure);
+        services.Settings.Changed += (_, s) => services.Dispatcher.Post(Reconfigure);
         services.Applied += (_, report) =>
         {
             if (report.Failed.Count == 0) Island.ShowMessage(Glyphs.Palette, $"Тема применена · {Imagine.Color.ColorUtils.ToHex(report.Theme.Seed)}");
@@ -91,11 +91,7 @@ public sealed class ShellController : IDisposable
         Reconfigure();
         if (_services.Current.General.ShowTrayIcon) CreateTray();
         _clock = new ClockWidgetWindow(_services);
-        _services.Dispatcher.TryEnqueue(Microsoft.UI.Dispatching.DispatcherQueuePriority.Low, () =>
-        {
-            try { _clock.ShowClock(); }
-            catch (Exception ex) { Log.Error("Часы на рабочем столе", ex); }
-        });
+        _services.Dispatcher.Post(() => _clock.ShowClock(), Microsoft.UI.Dispatching.DispatcherQueuePriority.Low);
     }
 
     private void CreateTray()
@@ -104,7 +100,7 @@ public sealed class ShellController : IDisposable
         {
             var icon = Path.Combine(AppContext.BaseDirectory, "Assets", "Imagine.ico");
             _tray = new TrayIcon(icon, "Imagine", TrayMenu);
-            _tray.Clicked += (_, _) => _services.Dispatcher.TryEnqueue(() => Open(ShadeKind.QuickSettings, ShadeTrigger.Tray));
+            _tray.Clicked += (_, _) => _services.Dispatcher.Post(() => Open(ShadeKind.QuickSettings, ShadeTrigger.Tray));
         }
         catch (Exception ex)
         {
@@ -208,8 +204,8 @@ public sealed class ShellController : IDisposable
     private void Bind(string text, Action action)
     {
         if (!HotkeyGesture.TryParse(text, out var g) || g.IsEmpty) return;
-        if (_messages.RegisterHotkey(g, () => _services.Dispatcher.TryEnqueue(() => action()))) return;
-        _keyboard.Intercept(g, () => _services.Dispatcher.TryEnqueue(() => action()));
+        if (_messages.RegisterHotkey(g, () => _services.Dispatcher.Post(() => action()))) return;
+        _keyboard.Intercept(g, () => _services.Dispatcher.Post(() => action()));
         _keyboardNeeded = true;
     }
 
@@ -222,7 +218,7 @@ public sealed class ShellController : IDisposable
             {
                 _picking = false;
                 int x = e.X, y = e.Y;
-                _services.Dispatcher.TryEnqueue(() => FinishColorPick(x, y));
+                _services.Dispatcher.Post(() => FinishColorPick(x, y));
             }
             return;
         }

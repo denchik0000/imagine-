@@ -67,7 +67,7 @@ public abstract class ShadeWindow : OverlayWindow
         {
             if (e.WindowActivationState == WindowActivationState.Deactivated && IsOpen && !_dragging) Close(animated: true);
         };
-        Palette.Changed += (_, t) => DispatcherQueue.TryEnqueue(() => ApplyTheme(t));
+        Palette.Changed += (_, t) => DispatcherQueue.Post(() => ApplyTheme(t));
         if (Palette.Current is { } current) ApplyTheme(current);
     }
 
@@ -168,6 +168,20 @@ public abstract class ShadeWindow : OverlayWindow
     }
 
     private void OnFrame(object? sender, object e)
+    {
+        try
+        {
+            OnFrameCore();
+        }
+        catch (Exception ex)
+        {
+            // Кадр анимации не должен ронять приложение: останавливаем анимацию и пишем в журнал.
+            CompositionTarget.Rendering -= OnFrame;
+            Log.Error("Кадр анимации", ex);
+        }
+    }
+
+    private void OnFrameCore()
     {
         long now = Environment.TickCount64;
         double dt = Math.Min(0.05, (now - _lastFrame) / 1000.0);

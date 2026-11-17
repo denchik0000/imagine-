@@ -43,17 +43,28 @@ public sealed partial class App : Application, IXamlMetadataProvider
 
     protected override void OnLaunched(LaunchActivatedEventArgs args)
     {
-        Resources.MergedDictionaries.Add(new XamlControlsResources());
-        Services = new AppServices();
-        Shell = new ShellController(Services);
-        Shell.Start();
+        Log.Info($"Запуск Imagine {typeof(App).Assembly.GetName().Version}, Windows {Environment.OSVersion.Version}");
+        Platform.Input.MessageWindow.HandlerFailed += ex => Log.Error("Обработчик оконного сообщения", ex);
+        try
+        {
+            Resources.MergedDictionaries.Add(new XamlControlsResources());
+            Services = new AppServices();
+            Shell = new ShellController(Services);
+        }
+        catch (Exception ex)
+        {
+            Log.Error("Запуск", ex);
+            throw;
+        }
+        // Оболочка (хуки, трей, часы) не должна мешать открыть окно настроек, если в ней что-то сломалось.
+        Safe.Run(Shell.Start, "Запуск оболочки");
         _ = Services.StartAsync();
 
         bool silent = _args.Contains("--background", StringComparer.OrdinalIgnoreCase);
-        if (!silent) ShowSettings();
+        if (!silent) Safe.Run(() => ShowSettings(), "Окно настроек");
     }
 
-    public void OnRedirectedActivation() => Services.Dispatcher.TryEnqueue(() => ShowSettings());
+    public void OnRedirectedActivation() => Services.Dispatcher.Post(() => ShowSettings());
 
     public void ShowSettings(string? page = null)
     {
@@ -104,11 +115,9 @@ public static class Log
                 File.AppendAllText(FilePath, $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {level} {message}{Environment.NewLine}");
             }
         }
-        catch (IOException)
+        catch (Exception)
         {
-        }
-        catch (UnauthorizedAccessException)
-        {
+            // Журнал не должен ломать приложение.
         }
     }
 }

@@ -65,7 +65,7 @@ public sealed class MainWindow : Window
         root.Children.Add(_nav);
         Content = root;
 
-        Palette.Changed += (_, t) => DispatcherQueue.TryEnqueue(() => ApplyAccent(t));
+        Palette.Changed += (_, t) => DispatcherQueue.Post(() => ApplyAccent(t));
         if (Palette.Current is { } current) ApplyAccent(current);
         _nav.SelectedItem = _nav.MenuItems[0];
     }

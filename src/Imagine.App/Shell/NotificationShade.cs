@@ -85,7 +85,7 @@ public sealed class NotificationShade : ShadeWindow
         _clock = new DispatcherTimerLite(DispatcherQueue, TimeSpan.FromSeconds(1), UpdateClock);
         Opened += (_, _) => _clock.Start();
         ClosedShade += (_, _) => _clock.Stop();
-        services.Notifications.Changed += (_, _) => DispatcherQueue.TryEnqueue(async () =>
+        services.Notifications.Changed += (_, _) => DispatcherQueue.Post(async () =>
         {
             await LoadAsync();
             if (IsOpen) Render();
@@ -364,7 +364,7 @@ public sealed class DispatcherTimerLite
     {
         _timer = queue.CreateTimer();
         _timer.Interval = interval;
-        _timer.Tick += (_, _) => tick();
+        _timer.Tick += (_, _) => Safe.Run(tick, "Ошибка таймера");
     }
 
     public TimeSpan Interval

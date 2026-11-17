@@ -39,12 +39,12 @@ public sealed class ClockWidgetWindow : OverlayWindow
         _timer = new DispatcherTimerLite(DispatcherQueue, TimeSpan.FromSeconds(1), () => _clock.Tick(DateTime.Now));
         // Клик по часам или Alt+Tab мог поднять окно — возвращаем его вниз.
         Activated += (_, _) => WindowStyler.SendToBottom(Hwnd);
-        Palette.Changed += (_, _) => DispatcherQueue.TryEnqueue(Restyle);
+        Palette.Changed += (_, _) => DispatcherQueue.Post(Restyle);
         services.Settings.Changed += (_, settings) =>
         {
             // Перестраиваем часы, только если поменялись именно их настройки.
             if (Equals(settings.Clock, _lastClock)) return;
-            DispatcherQueue.TryEnqueue(Restyle);
+            DispatcherQueue.Post(Restyle);
         };
     }
 
@@ -142,6 +142,20 @@ public sealed class ClockWidgetWindow : OverlayWindow
     }
 
     private void OnFrame(object? sender, object e)
+    {
+        try
+        {
+            OnFrameCore();
+        }
+        catch (Exception ex)
+        {
+            // Кадр анимации не должен ронять приложение: останавливаем анимацию и пишем в журнал.
+            CompositionTarget.Rendering -= OnFrame;
+            Log.Error("Кадр анимации", ex);
+        }
+    }
+
+    private void OnFrameCore()
     {
         long now = Environment.TickCount64;
         bool moving = _fly.Step(Math.Min(0.05, (now - _lastFrame) / 1000.0));

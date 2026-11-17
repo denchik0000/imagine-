@@ -45,10 +45,10 @@ public sealed class QuickSettingsShade : ShadeWindow
         var scroll = new ScrollViewer { Content = content, VerticalScrollBarVisibility = ScrollBarVisibility.Auto, Padding = new Thickness(0, 0, 6, 0) };
         SetBody(new Border { Padding = new Thickness(18, 20, 12, 0), Child = scroll });
 
-        services.Media.Changed += (_, _) => DispatcherQueue.TryEnqueue(() => { if (IsOpen) _ = RenderMediaAsync(); });
+        services.Media.Changed += (_, _) => DispatcherQueue.Post(() => { if (IsOpen) _ = RenderMediaAsync(); });
         // Громкость меняется и от нашего же ползунка: пока пользователь его тянет, панель не пересобираем,
         // иначе ползунок пересоздаётся под пальцем на каждом шаге.
-        services.Audio.Changed += (_, _) => DispatcherQueue.TryEnqueue(() =>
+        services.Audio.Changed += (_, _) => DispatcherQueue.Post(() =>
         {
             if (IsOpen && !_suppressSliders && Environment.TickCount64 - _lastUserSlide > 1500) RenderSliders();
         });

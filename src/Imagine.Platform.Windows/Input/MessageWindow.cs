@@ -11,6 +11,10 @@ namespace Imagine.Platform.Input;
 public sealed class MessageWindow : IDisposable
 {
     private static int s_classCounter;
+
+    // Живые окна держим статически: пока окно существует, Windows может вызвать его WndProc,
+    // и делегат не должен попасть под сборку мусора, даже если на объект никто больше не ссылается.
+    private static readonly HashSet<MessageWindow> s_alive = [];
     private readonly NativeMethods.WndProc _wndProc;
     private readonly Dictionary<int, Action> _hotkeys = [];
     private int _nextId = 1;
@@ -30,6 +34,7 @@ public sealed class MessageWindow : IDisposable
         // Обычное (не message-only) скрытое окно, чтобы получать широковещательные WM_SETTINGCHANGE/WM_DISPLAYCHANGE.
         Handle = NativeMethods.CreateWindowEx(0, className, "Imagine", 0, 0, 0, 0, 0, IntPtr.Zero, IntPtr.Zero, wc.hInstance, IntPtr.Zero);
         NativeMethods.WTSRegisterSessionNotification(Handle, 0);
+        lock (s_alive) s_alive.Add(this);
     }
 
     public IntPtr Handle { get; }
@@ -71,7 +76,24 @@ public sealed class MessageWindow : IDisposable
         _hotkeys.Clear();
     }
 
+    /// <summary>Ошибка в обработчике сообщения, которую поймали, чтобы не уронить процесс.</summary>
+    public static event Action<Exception>? HandlerFailed;
+
     private IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+    {
+        try
+        {
+            return WndProcCore(hWnd, msg, wParam, lParam);
+        }
+        catch (Exception ex)
+        {
+            // Исключение, вылетевшее из оконной процедуры в нативный код, убивает процесс без шансов.
+            HandlerFailed?.Invoke(ex);
+            return NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam);
+        }
+    }
+
+    private IntPtr WndProcCore(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
         RawMessage?.Invoke(msg, wParam, lParam);
         if (msg == s_taskbarCreated) TaskbarCreated?.Invoke(this, EventArgs.Empty);
@@ -99,5 +121,6 @@ public sealed class MessageWindow : IDisposable
         UnregisterAllHotkeys();
         NativeMethods.WTSUnRegisterSessionNotification(Handle);
         NativeMethods.DestroyWindow(Handle);
+        lock (s_alive) s_alive.Remove(this);
     }
 }

@@ -38,13 +38,17 @@ public sealed class AppServices : IDisposable
         Actions = new SystemActions();
         Engine = new PersonalizationEngine(Settings, Decoder, Registry, Accent, Lighting, Snapshots, Wallpapers);
 
-        Engine.ThemeChanged += (_, theme) => Dispatcher.TryEnqueue(() => Ui.Palette.Apply(theme));
+        Engine.ThemeChanged += (_, theme) => Dispatcher.Post(() => Ui.Palette.Apply(theme));
         Media.Changed += OnMediaChanged;
 
         // Раз в минуту проверяем фазу суток: «дыхание» палитры и смена светлой/тёмной по расписанию.
         _scheduleTimer = Dispatcher.CreateTimer();
         _scheduleTimer.Interval = TimeSpan.FromMinutes(1);
-        _scheduleTimer.Tick += async (_, _) => await OnScheduleTickAsync();
+        _scheduleTimer.Tick += async (_, _) =>
+        {
+            try { await OnScheduleTickAsync(); }
+            catch (Exception ex) { Log.Error("Расписание", ex); }
+        };
 
         _lockTimer = Dispatcher.CreateTimer();
         _lockTimer.Interval = TimeSpan.FromMinutes(1);
@@ -55,8 +59,12 @@ public sealed class AppServices : IDisposable
         };
 
         _rotationTimer = Dispatcher.CreateTimer();
-        _rotationTimer.Tick += async (_, _) => await NextWallpaperAsync();
-        Settings.Changed += (_, _) => Dispatcher.TryEnqueue(ConfigureRotation);
+        _rotationTimer.Tick += async (_, _) =>
+        {
+            try { await NextWallpaperAsync(); }
+            catch (Exception ex) { Log.Error("Смена обоев по таймеру", ex); }
+        };
+        Settings.Changed += (_, _) => Dispatcher.Post(ConfigureRotation);
     }
 
     public DispatcherQueue Dispatcher { get; }
@@ -113,7 +121,7 @@ public sealed class AppServices : IDisposable
             var report = await Engine.ApplyAsync(reason);
             LastReport = report;
             _lastDark = report.Theme.IsDark;
-            Dispatcher.TryEnqueue(() => Applied?.Invoke(this, report));
+            Dispatcher.Post(() => Applied?.Invoke(this, report));
             foreach (var f in report.Failed) Log.Info("Не применено: " + f);
             return report;
         }
@@ -138,7 +146,7 @@ public sealed class AppServices : IDisposable
             var report = await Engine.SetWallpaperAsync(path, LockScreen);
             LastReport = report;
             if (Current.Wallpaper.BakeClockIntoLockScreen) await BakeLockScreenAsync();
-            Dispatcher.TryEnqueue(() => Applied?.Invoke(this, report));
+            Dispatcher.Post(() => Applied?.Invoke(this, report));
             return report;
         }
         catch (Exception ex)
@@ -177,7 +185,7 @@ public sealed class AppServices : IDisposable
             {
                 await Task.Delay(450, cts.Token);
                 var preview = await Engine.PreviewAsync(ct: cts.Token);
-                Dispatcher.TryEnqueue(() => Ui.Palette.Apply(preview));
+                Dispatcher.Post(() => Ui.Palette.Apply(preview));
                 await Task.Delay(600, cts.Token);
                 await ApplyAsync("Изменение настроек темы");
             }
@@ -243,7 +251,7 @@ public sealed class AppServices : IDisposable
             if (seed == Engine.NowPlayingSeed) return;
             Engine.NowPlayingSeed = seed;
             var preview = await Engine.PreviewAsync();
-            Dispatcher.TryEnqueue(() => Ui.Palette.Apply(preview));
+            Dispatcher.Post(() => Ui.Palette.Apply(preview));
         }
         catch (Exception ex)
         {
